@@ -3,6 +3,7 @@ package raft
 // 14-736 Lab 2 Raft implementation in go
 
 import (
+	"log"
 	"math/rand"
 	"raft/remote"
 	"sync"
@@ -45,6 +46,33 @@ type StatusReport struct {
 //     a new command value by a Raft client.  upon receipt, it will initiate processing of the command
 //     and reply back to the Controller with a StatusReport struct as defined above. it must be
 //     implemented as given, or the test code will not function correctly.  more detail below
+
+type VoteRequest struct {
+	Term         int
+	CandidateId  int
+	LastLogIndex int
+	LastLogTerm  int
+}
+
+type VoteResponse struct {
+	Term        int
+	VoteGranted bool
+}
+
+type AppendEntriesRequest struct {
+	Term         int
+	LeaderId     int
+	PrevLogIndex int
+	PrevLogTerm  int
+	Entries      []logEntry
+	LeaderCommit int
+}
+
+type AppendEntriesResponse struct {
+	Term    int
+	Success bool
+}
+
 type RaftInterface struct {
 	RequestVote     func() // TODO: define function type
 	AppendEntries   func() // TODO: define function type
@@ -80,7 +108,6 @@ type RaftPeer struct {
 	applyChan       chan logEntry
 
 	service *remote.Service
-	// stubFactory *remote.StubFactory()
 
 	leaderId       int
 	callCount      int
@@ -115,6 +142,12 @@ func NewRaftPeer(port int, id int, num int) *RaftPeer { // TODO: <---- change th
 		lastActiveTime:  time.Now(),
 	}
 
+	srvc, err := remote.NewService(&raftInterface, rf, port, true, true)
+	if err != nil {
+		log.Println("Error")
+	}
+	rf.service = srvc
+
 	// when a new raft peer is created, its initial state should be populated into the corresponding
 	// struct entries, and its `remote.Service` and `remote.StubFactory` components should be created,
 	// but the Service should not be started (the Controller will do that when ready).
@@ -125,7 +158,7 @@ func NewRaftPeer(port int, id int, num int) *RaftPeer { // TODO: <---- change th
 	// starting from peer with `id = 0` and ending with `id = num-1`, so any peer who knows its own
 	// `id`, `port`, and `num` can determine the port number used by any other peer.
 
-	return nil
+	return rf
 }
 
 // `Activate` -- this method operates on your Raft peer struct and initiates functionality
@@ -153,6 +186,16 @@ func NewRaftPeer(port int, id int, num int) *RaftPeer { // TODO: <---- change th
 //
 // TODO: implement the `Activate` method
 
+func (rf *RaftPeer) Activate() {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if rf.service != nil && rf.service.IsRunning() {
+		rf.service.Start()
+		go rf.runRaft()
+	}
+}
+
 // `Deactivate` -- this method performs the "inverse" operation to `Activate`, namely to emulate
 // disconnection / failure of the Raft peer.  when called, the Raft peer should effectively "go
 // to sleep", meaning it should stop its underlying remote.Service interface, including shutting
@@ -168,11 +211,87 @@ func NewRaftPeer(port int, id int, num int) *RaftPeer { // TODO: <---- change th
 //
 // TODO: implement the `Deactivate` method
 
+func (rf *RaftPeer) Deactivate() {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if rf.service != nil && rf.service.IsRunning() {
+		rf.service.Stop()
+	}
+}
+
+func (rf *RaftPeer) runRaft() {
+	// Implement the main RAFT algorithm here
+	for {
+		select {
+		case <-rf.applyChan:
+			// Handle application of log entries
+		}
+	}
+}
+
 // TODO: implement remote method calls from other Raft peers:
 //
 // RequestVote -- as described in the Raft paper, called by other Raft peers
-//
+
+func (rf *RaftPeer) RequestVote(request VoteRequest) (VoteResponse, remote.RemoteObjectError) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	response := VoteResponse{
+		Term:        rf.currentTerm,
+		VoteGranted: false,
+	}
+
+	if request.Term > rf.currentTerm {
+		rf.currentTerm = request.Term
+		rf.votedFor = -1
+		rf.state = "follower"
+	}
+
+	if rf.votedFor == -1 || rf.votedFor == request.CandidateId {
+		if request.LastLogIndex >= rf.commitIndex {
+			rf.votedFor = request.CandidateId
+			response.VoteGranted = true
+		}
+	}
+
+	return response, remote.RemoteObjectError{}
+}
+
 // AppendEntries -- as described in the Raft paper, called by other Raft peers
+
+func (rf *RaftPeer) AppendEntries(request AppendEntriesRequest) (AppendEntriesResponse, remote.RemoteObjectError) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	response := AppendEntriesResponse{
+		Term:    rf.currentTerm,
+		Success: false,
+	}
+
+	if request.Term < rf.currentTerm {
+		return response, remote.RemoteObjectError{}
+	}
+
+	rf.currentTerm = request.Term
+	rf.leaderId = request.LeaderId
+	rf.state = "follower"
+	rf.lastHeartbeat = time.Now()
+
+	if request.PrevLogIndex > len(rf.log)-1 || rf.log[request.PrevLogIndex].term != request.PrevLogTerm {
+		return response, remote.RemoteObjectError{}
+	}
+
+	rf.log = append(rf.log[:request.PrevLogIndex+1], request.Entries...)
+	if request.LeaderCommit > rf.commitIndex {
+		rf.commitIndex = min(request.LeaderCommit, len(rf.log)-1)
+	}
+
+	response.Success = true
+	return response, remote.RemoteObjectError{}
+}
+
 //
 // GetCommittedCmd -- called (only) by the Controller.  this method provides an input argument
 // `index`.  if the Raft peer has a log entry at the given `index`, and that log entry has been
@@ -180,15 +299,59 @@ func NewRaftPeer(port int, id int, num int) *RaftPeer { // TODO: <---- change th
 // to the Controller.  otherwise, the Raft peer should return the value 0, which is not a valid
 // command number and indicates that no committed log entry exists at that index
 //
+
+func (rf *RaftPeer) GetCommittedCmd(index int) (int, remote.RemoteObjectError) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if index >= 0 && index < len(rf.log) && rf.log[index].term <= rf.currentTerm {
+		return rf.log[index].command, remote.RemoteObjectError{}
+	}
+
+	return 0, remote.RemoteObjectError{}
+}
+
 // GetStatus -- called (only) by the Controller.  this method takes no arguments and is essentially
 // a "getter" for the state of the Raft peer, including the Raft peer's current term, current last
 // log index, role in the Raft algorithm, and total number of remote calls handled since starting.
 // the method returns a `StatusReport` struct as defined at the top of this file.
 //
+
+func (rf *RaftPeer) GetStatus() (StatusReport, remote.RemoteObjectError) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	return StatusReport{
+		Index:     rf.commitIndex,
+		Term:      rf.currentTerm,
+		Leader:    rf.state == "leader",
+		CallCount: rf.callCount,
+	}, remote.RemoteObjectError{}
+}
+
 // NewCommand -- called (only) by the Controller.  this method emulates submission of a new command
 // by a Raft client to this Raft peer, which should be handled and processed according to the rules
 // of the Raft algorithm.  once handled, the Raft peer should return a `StatusReport` struct with
 // the updated status after the new command was handled.
+
+func (rf *RaftPeer) NewCommand(command int) (StatusReport, remote.RemoteObjectError) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if rf.state != "leader" {
+		return StatusReport{}, remote.RemoteObjectError{Err: "Not a leader"}
+	}
+
+	rf.log = append(rf.log, logEntry{term: rf.currentTerm, command: command})
+	rf.callCount++
+
+	return StatusReport{
+		Index:     len(rf.log) - 1,
+		Term:      rf.currentTerm,
+		Leader:    true,
+		CallCount: rf.callCount,
+	}, remote.RemoteObjectError{}
+}
 
 // general notes:
 //
