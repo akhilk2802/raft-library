@@ -14,6 +14,12 @@ The RAFT consensus algorithm is used to manage a replicated log across multiple 
 - Heartbeat mechanism
 - Remote procedure call (RPC) handling
 
+## Reference Papers used
+
+- http://nil.csail.mit.edu/6.824/2020/papers/raft-extended.pdf
+- https://raft.github.io
+- https://www.cl.cam.ac.uk/teaching/2021/ConcDisSys/dist-sys-notes.pdf
+
 ## Project Structure
 
 - `remote/`: Contains the remote library for handling RPCs.
