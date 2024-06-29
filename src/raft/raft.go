@@ -5,6 +5,7 @@ package raft
 import (
 	"log"
 	"math/rand"
+	"net/rpc"
 	"raft/remote"
 	"sync"
 	"time"
@@ -74,8 +75,8 @@ type AppendEntriesResponse struct {
 }
 
 type RaftInterface struct {
-	RequestVote     func() // TODO: define function type
-	AppendEntries   func() // TODO: define function type
+	RequestVote     func(VoteRequest) VoteResponse                   // TODO: define function type
+	AppendEntries   func(AppendEntriesRequest) AppendEntriesResponse // TODO: define function type
 	GetCommittedCmd func(int) (int, remote.RemoteObjectError)
 	GetStatus       func() (StatusReport, remote.RemoteObjectError)
 	NewCommand      func(int) (StatusReport, remote.RemoteObjectError)
@@ -87,6 +88,7 @@ type RaftInterface struct {
 // TODO: define a struct to maintain the local state of a single Raft peer
 
 type logEntry struct {
+	index   int
 	term    int
 	command int
 }
@@ -142,7 +144,8 @@ func NewRaftPeer(port int, id int, num int) *RaftPeer { // TODO: <---- change th
 		lastActiveTime:  time.Now(),
 	}
 
-	srvc, err := remote.NewService(&raftInterface, rf, port, true, true)
+	rfIfc := &RaftInterface{}
+	srvc, err := remote.NewService(rfIfc, rf, port, true, true)
 	if err != nil {
 		log.Println("Error")
 	}
@@ -221,12 +224,132 @@ func (rf *RaftPeer) Deactivate() {
 }
 
 func (rf *RaftPeer) runRaft() {
-	// Implement the main RAFT algorithm here
 	for {
 		select {
-		case <-rf.applyChan:
-			// Handle application of log entries
+		case <-time.After(rf.electionTimeout):
+			rf.mu.Lock()
+			if rf.state != "leader" && time.Since(rf.lastHeartbeat) >= rf.electionTimeout {
+				rf.startElection()
+			}
+			rf.mu.Unlock()
+		case entry := <-rf.applyChan:
+			rf.applyLogEntry(entry)
 		}
+	}
+}
+
+func (rf *RaftPeer) startElection() {
+	rf.state = "candidate"
+	rf.currentTerm++
+	rf.votedFor = rf.id
+	rf.lastHeartbeat = time.Now()
+	rf.mu.Unlock()
+
+	// Request votes from other peers
+	votes := 1
+	var wg sync.WaitGroup
+	for _, peer := range rf.peers {
+		if peer == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(peer string) {
+			defer wg.Done()
+			client, err := rpc.Dial("tcp", peer)
+			if err != nil {
+				return
+			}
+			defer client.Close()
+
+			args := VoteRequest{
+				Term:         rf.currentTerm,
+				CandidateId:  rf.id,
+				LastLogIndex: len(rf.log) - 1,
+				LastLogTerm:  rf.log[len(rf.log)-1].term,
+			}
+
+			var reply VoteResponse
+			err = client.Call("RaftPeer.RequestVote", args, &reply)
+			if err != nil {
+				return
+			}
+			rf.mu.Lock()
+			defer rf.mu.Unlock()
+			if reply.VoteGranted {
+				votes++
+			}
+		}(peer)
+	}
+	wg.Wait()
+
+	rf.mu.Lock()
+	if votes > len(rf.peers)/2 {
+		rf.state = "leader"
+		rf.sendHeartbeats()
+	} else {
+		rf.state = "follower"
+	}
+	rf.mu.Unlock()
+}
+
+func (rf *RaftPeer) sendHeartbeats() {
+	for _, peer := range rf.peers {
+		if peer == "" {
+			continue
+		}
+		go func(peer string) {
+			client, err := rpc.Dial("tcp", peer)
+			if err != nil {
+				return
+			}
+			defer client.Close()
+
+			args := AppendEntriesRequest{
+				Term:         rf.currentTerm,
+				LeaderId:     rf.id,
+				PrevLogIndex: len(rf.log) - 1,
+				PrevLogTerm:  rf.log[len(rf.log)-1].term,
+				Entries:      []logEntry{},
+				LeaderCommit: rf.commitIndex,
+			}
+			var reply AppendEntriesResponse
+			err = client.Call("RaftPeer.AppendEntries", args, &reply)
+			if err != nil {
+				return
+			}
+			rf.mu.Lock()
+			defer rf.mu.Unlock()
+			if reply.Term > rf.currentTerm {
+				rf.currentTerm = reply.Term
+				rf.state = "follower"
+				rf.votedFor = -1
+			}
+		}(peer)
+	}
+}
+
+func (rf *RaftPeer) applyLogEntry(entry logEntry) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if entry.index <= rf.lastApplied {
+		return
+	}
+
+	// Apply the log entry to the state machine
+	// Example: rf.stateMachine.Apply(entry.command)
+	// For this example, we'll just log the command
+	log.Printf("Applying log entry: %+v\n", entry)
+
+	// Update the lastApplied index
+	rf.lastApplied = entry.index
+
+	// Notify other components (e.g., using a channel)
+	rf.applyChan <- entry
+
+	// Optional: Update other state variables
+	if entry.index > rf.commitIndex {
+		rf.commitIndex = entry.index
 	}
 }
 
@@ -249,11 +372,11 @@ func (rf *RaftPeer) RequestVote(request VoteRequest) (VoteResponse, remote.Remot
 		rf.state = "follower"
 	}
 
-	if rf.votedFor == -1 || rf.votedFor == request.CandidateId {
-		if request.LastLogIndex >= rf.commitIndex {
-			rf.votedFor = request.CandidateId
-			response.VoteGranted = true
-		}
+	if (rf.votedFor == -1 || rf.votedFor == request.CandidateId) &&
+		(request.LastLogTerm > rf.log[len(rf.log)-1].term ||
+			(request.LastLogTerm == rf.log[len(rf.log)-1].term && request.LastLogIndex >= len(rf.log)-1)) {
+		rf.votedFor = request.CandidateId
+		response.VoteGranted = true
 	}
 
 	return response, remote.RemoteObjectError{}
@@ -274,9 +397,13 @@ func (rf *RaftPeer) AppendEntries(request AppendEntriesRequest) (AppendEntriesRe
 		return response, remote.RemoteObjectError{}
 	}
 
-	rf.currentTerm = request.Term
-	rf.leaderId = request.LeaderId
+	if request.Term > rf.currentTerm {
+		rf.currentTerm = request.Term
+		rf.votedFor = -1
+	}
+
 	rf.state = "follower"
+	rf.leaderId = request.LeaderId
 	rf.lastHeartbeat = time.Now()
 
 	if request.PrevLogIndex > len(rf.log)-1 || rf.log[request.PrevLogIndex].term != request.PrevLogTerm {
@@ -303,11 +430,9 @@ func (rf *RaftPeer) AppendEntries(request AppendEntriesRequest) (AppendEntriesRe
 func (rf *RaftPeer) GetCommittedCmd(index int) (int, remote.RemoteObjectError) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-
 	if index >= 0 && index < len(rf.log) && rf.log[index].term <= rf.currentTerm {
 		return rf.log[index].command, remote.RemoteObjectError{}
 	}
-
 	return 0, remote.RemoteObjectError{}
 }
 
