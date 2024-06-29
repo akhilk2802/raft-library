@@ -1,10 +1,6 @@
-# Attempted to implement RAFT with GO
-
-
-
 # RAFT Consensus Algorithm Implementation
 
-
+## Attempted to implement RAFT with GO
 
 This repository contains an implementation of the RAFT consensus algorithm in Go. The implementation uses a custom remote library to handle remote procedure calls (RPCs) between RAFT peers.
 
