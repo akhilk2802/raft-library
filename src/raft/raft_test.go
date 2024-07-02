@@ -45,6 +45,7 @@ func NewController(t *testing.T, num int, prt int) *Controller {
 		go RaftControl(portI, i, num, ctrl.ch[i])
 
 		ctrl.peers[i] = &RaftInterface{}
+		fmt.Println("ctrl peers : ", ctrl.peers[i])
 		errI := remote.StubFactory(ctrl.peers[i], "localhost:"+strconv.Itoa(portI), false, false)
 		if errI != nil {
 			ctrl.cleanup()

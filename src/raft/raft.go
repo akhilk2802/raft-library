@@ -3,6 +3,7 @@ package raft
 // 14-736 Lab 2 Raft implementation in go
 
 import (
+	"fmt"
 	"log"
 	"math/rand"
 	"net/rpc"
@@ -254,6 +255,7 @@ func (rf *RaftPeer) startElection() {
 		}
 		wg.Add(1)
 		go func(peer string) {
+			fmt.Println("Peer Value : ", peer)
 			defer wg.Done()
 			client, err := rpc.Dial("tcp", peer)
 			if err != nil {

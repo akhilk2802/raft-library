@@ -19,6 +19,9 @@ final: build
 checkpoint: build
 	cd src/$(PKGNAME); go test -v $(MKARGS) -run Checkpoint
 
+Setup: build
+	cd src/$(PKGNAME); go test -v $(MKARGS) -run TestCheckpoint_Setup
+
 all: build
 	cd src/$(PKGNAME); go test -v $(MKARGS)
 

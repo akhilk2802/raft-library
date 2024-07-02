@@ -549,20 +549,37 @@ func StubFactory(ifc interface{}, adr string, lossy bool, delayed bool) error {
 	ifcValue := reflect.ValueOf(ifc).Elem()
 	ifcType := reflect.TypeOf(ifc).Elem()
 
-	for i := 0; i < ifcType.NumField(); i++ {
-		methodType := ifcType.Field(i).Type
+	// for i := 0; i < ifcType.NumField(); i++ {
+	// 	methodType := ifcType.Field(i).Type
 
-		hasRemoteObjectError := false
-		for j := 0; j < methodType.NumOut(); j++ {
-			returnType := methodType.Out(j)
-			if returnType.Kind() == reflect.Struct && returnType.Name() == "RemoteObjectError" {
-				hasRemoteObjectError = true
-				break
+	// 	hasRemoteObjectError := false
+	// 	for j := 0; j < methodType.NumOut(); j++ {
+	// 		returnType := methodType.Out(j)
+	// 		if returnType.Kind() == reflect.Struct && returnType.Name() == "RemoteObjectError" {
+	// 			hasRemoteObjectError = true
+	// 			break
+	// 		}
+	// 	}
+	// 	if !hasRemoteObjectError {
+	// 		return errors.New("doesn't return RemoteObjectError")
+	// 	}
+	// }
+
+	if ifcType.NumField() != 0 {
+		for i := 0; i < ifcType.NumField(); i++ {
+			field := ifcType.Field(i)
+			if field.Type.Kind() == reflect.Func {
+				numOut := field.Type.NumOut()
+				lastReturnType := field.Type.Out(numOut - 1)
+				if lastReturnType != reflect.TypeOf((*RemoteObjectError)(nil)).Elem() {
+					return fmt.Errorf("fields / methods now after validation that the struct indeed contains fields of kind functions does not return roe")
+				}
+			} else {
+				return fmt.Errorf("the interface maybe initialized as a struct or doesnt contain any methods. please check what is being passed. pass an interface with undefined methods")
 			}
 		}
-		if !hasRemoteObjectError {
-			return errors.New("doesn't return RemoteObjectError")
-		}
+	} else {
+		return fmt.Errorf("interface (struct apparently) type doesnt contain any methods")
 	}
 
 	for i := 0; i < ifcType.NumField(); i++ {
