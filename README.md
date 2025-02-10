@@ -1,61 +1,100 @@
 # RAFT Consensus Algorithm Implementation
 
-## Attempted to implement RAFT with GO
+## 📌 Overview
+This repository contains an **implementation of the RAFT consensus algorithm** in **Go**. The implementation leverages a **custom-built remote library** to facilitate **Remote Procedure Calls (RPCs)** between RAFT peers, ensuring distributed consensus across multiple servers.
 
-This repository contains an implementation of the RAFT consensus algorithm in Go. The implementation uses a custom remote library to handle remote procedure calls (RPCs) between RAFT peers.
+The RAFT consensus algorithm is designed to manage **replicated logs in distributed systems** and ensures **leader election, log replication, and fault tolerance**.
 
-## Overview
+---
 
-The RAFT consensus algorithm is used to manage a replicated log across multiple servers in a distributed system. This implementation includes:
+## 🚀 Features
+- **RAFT Peer Management**: Handles the interaction between nodes in the RAFT cluster.
+- **Leader Election**: Nodes vote to elect a leader in case of failures.
+- **Log Replication**: Ensures consistency across nodes by synchronizing logs.
+- **Heartbeat Mechanism**: Prevents leader re-elections by periodically sending heartbeats.
+- **Remote Procedure Call (RPC) Handling**: Implements efficient inter-node communication.
 
-- RAFT peer management
-- Leader election
-- Log replication
-- Heartbeat mechanism
-- Remote procedure call (RPC) handling
+---
 
-## Reference Papers used
+## 📚 Reference Papers & Resources
+This implementation is based on the following references:
+- [Extended RAFT Paper - MIT](http://nil.csail.mit.edu/6.824/2020/papers/raft-extended.pdf)
+- [RAFT Official Website](https://raft.github.io)
+- [Distributed Systems Notes - University of Cambridge](https://www.cl.cam.ac.uk/teaching/2021/ConcDisSys/dist-sys-notes.pdf)
+- Various **articles** and **YouTube tutorials**.
 
-- http://nil.csail.mit.edu/6.824/2020/papers/raft-extended.pdf
-- https://raft.github.io
-- https://www.cl.cam.ac.uk/teaching/2021/ConcDisSys/dist-sys-notes.pdf
-- And lots of articles and youtube tutorials 
+---
 
-## Project Structure
+## 📂 Project Structure
+```
+├── remote/   # Contains the custom-built remote library for handling RPCs
+├── raft/     # Contains the RAFT implementation
+```
 
-- `remote/`: Contains the remote library for handling RPCs.
-- `raft/`: Contains the RAFT implementation.
+- **`remote/`**: Handles all **RPC interactions** between RAFT nodes.
+- **`raft/`**: Contains the core **RAFT consensus algorithm** implementation.
 
-### Implementing Raft
 
-The first things you'll do in this lab is to copy your `remote` library code from Lab 1 into a directory in your
-Lab 2 repository at the location `src/remote` (i.e., a sibling directory to `src/raft`). It is ok if you need to
-make changes to your `remote` library for Lab 2. You do not need to copy the test code from lab 1, just the `.go`
-files comprising the remote object library itself.
+```plaintext
+.
+├── Makefile
+├── README.md
+└── src
+    ├── go.mod
+    ├── raft
+    │   ├── raft.go
+    │   └── raft_test.go
+    └── remote
+        └── remote.go
+```
 
-The `raft` package initially includes a rough outline of what you are required to implement, mainly based on the
-Raft paper but also adhering to the needs of our test suite (see below). Your primary task is to complete the
-implementation of the Raft protocol according to the specifications given in the Canvas assignment. You are free
-to create additional source files within the `raft` package as needed, and you can use whatever data structures,
-functions, and go routines that you desire to implement the protocol. However, you cannot change the test suite
-(or at least, your code must work with an unmodified test suite), so the provided interactions between `raft.go`
-and `raft_test.go` must be maintained. You are welcome (and encouraged) to read through the test code to see how
-the test `Controller` and the test cases work and what they are testing.
+---
 
-### Testing your Raft Implementation
 
-Once you're at the point where you want to run any of the provided tests, you can either use the appropriate `go test`
-commands or the provided `make` rules `checkpoint`, `final`, and `all` as used in the previous labs. The `Makefile`
-also includes rules that run Go's race detector to ensure that your implementation is thread safe. These rules are
-`checkpoint-race`, `test-race`, and `all-race`, and these rules are used in the auto-grader.
+## *You can use the boiler plate code and implement yourself*
 
-As with previous labs, you are certainly welcome to create your own test and supplementary evaluation code. You are
-also welcome to create additional `make` rules in the Makefile, but we ask that you keep the existing rules, as we will
-use them for lab grading.
+## 🛠️ Implementing RAFT
+### **Initial Setup**
+- Copy your **remote library** code from **Lab 1** into `src/remote/`.
+- The `raft` package includes a **base structure** aligned with the RAFT paper and **test suite requirements**.
+- Your goal is to **complete the RAFT protocol implementation**, ensuring compliance with the **Canvas assignment specifications**.
 
-### Generating documentation
+### **Development Guidelines**
+- You **can create additional files** in the `raft/` package as needed.
+- Use **appropriate data structures, functions, and Go routines**.
+- Ensure compatibility with the **existing test suite** (`raft_test.go`).
+- Read the **test cases and controller logic** to understand the expected behavior.
 
-We want you to get in the habit of documenting your code in a way that leads to detailed, easy-to-read/-navigate
-package documentation for your code package. Our Makefile includes a `docs` rule that will pipe the output of the
-`go doc` command into a text file that is reasonably easy to read. We will use this output for the manually graded
-parts of the lab, so good comments are valuable.
+---
+
+## ✅ Testing Your RAFT Implementation
+Once you are ready to test your implementation:
+
+### **Using Go Test Commands**
+```sh
+go test ./raft
+```
+
+### **Using Makefile Rules**
+The Makefile includes predefined **test execution rules**:
+- **`make checkpoint`** – Runs checkpoint tests.
+- **`make final`** – Runs final evaluation tests.
+- **`make all`** – Runs all test cases.
+- **`make checkpoint-race`**, **`make test-race`**, **`make all-race`** – Execute tests with Go's **race detector** to ensure thread safety.
+
+> 🚀 **Pro Tip:** You are encouraged to create **your own additional tests** for further validation!
+
+---
+
+## 📄 Generating Documentation
+To ensure **clear and readable package documentation**, we encourage writing detailed comments in the codebase.
+
+### **Generate Documentation Using Makefile**
+```sh
+make docs
+```
+This command pipes `go doc` output into a **formatted text file** for easy navigation and manual grading.
+
+---
+🚀 **RAFT Consensus Algorithm Implementation - Ensuring Reliable Distributed Consensus!**
+
